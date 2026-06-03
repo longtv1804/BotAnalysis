@@ -2,9 +2,11 @@ import pandas as pd
 from pathlib import Path
 
 
-def export_excel_report(trades, curve, daily_pnl, summary, daily_equity=None):
+def export_excel_report(html_path, trades, curve, summary, daily_equity=None):
     Path("output").mkdir(exist_ok=True)
-    with pd.ExcelWriter("output/report.xlsx", engine="xlsxwriter") as writer:
+    html_name = Path(html_path).stem
+    output_file = Path("output") / f"{html_name}.xlsx"
+    with pd.ExcelWriter(output_file, engine="xlsxwriter") as writer:
         pd.DataFrame([summary]).to_excel(
             writer,
             sheet_name="Summary",
@@ -14,12 +16,6 @@ def export_excel_report(trades, curve, daily_pnl, summary, daily_equity=None):
         trades.to_excel(
             writer,
             sheet_name="Trades",
-            index=False
-        )
-
-        daily_pnl.to_excel(
-            writer,
-            sheet_name="Daily_PnL",
             index=False
         )
 
@@ -50,8 +46,44 @@ def export_excel_report(trades, curve, daily_pnl, summary, daily_equity=None):
         worksheet.insert_chart("H2", chart)
 
         if daily_equity is not None:
+
             daily_equity.to_excel(
                 writer,
                 sheet_name="Daily_Statictis",
                 index=False
             )
+
+            ws = writer.sheets["Daily_Statictis"]
+
+            yellow = workbook.add_format({"bg_color": "#FFFF99"})
+            orange = workbook.add_format({"bg_color": "#F5C58B"})
+            purple = workbook.add_format({"bg_color": "#E5CCFF"})
+
+            cols = {
+                c: i
+                for i, c in enumerate(daily_equity.columns)
+            }
+            COL_WIDTH = 15
+            for i in range(len(daily_equity.columns)):
+                ws.set_column(i, i, COL_WIDTH)
+
+            for c in [
+                "min_floating_curve",
+                "min_floating_realtime"
+            ]:
+                if c in cols:
+                    ws.set_column(cols[c], cols[c], COL_WIDTH, yellow)
+
+            for c in [
+                "max_buy_volume_curve",
+                "max_buy_volume_realtime"
+            ]:
+                if c in cols:
+                    ws.set_column(cols[c], cols[c], COL_WIDTH, orange)
+
+            for c in [
+                "max_sell_volume_curve",
+                "max_sell_volume_realtime"
+            ]:
+                if c in cols:
+                    ws.set_column(cols[c], cols[c], COL_WIDTH, purple)
