@@ -1,67 +1,18 @@
 import pandas as pd
+from collections import defaultdict
 
-
-def daily_summary(curve):
-
-    df = curve.copy()
-
-    df["time"] = pd.to_datetime(df["time"])
-    df["date"] = df["time"].dt.date
-
-    if "floating_pnl" not in df.columns:
-        df["floating_pnl"] = (
-            df["equity"] - df["balance"]
-        )
-
-    return (
-        df.groupby("date")
-        .agg(
-            # cuối ngày
-            balance_end=("balance", "last"),
-            equity_end=("equity", "last"),
-
-            # balance
-            balance_min=("balance", "min"),
-            balance_max=("balance", "max"),
-
-            # equity
-            equity_min=("equity", "min"),
-            equity_max=("equity", "max"),
-
-            # floating pnl
-            floating_min=("floating_pnl", "min"),
-            floating_max=("floating_pnl", "max"),
-            floating_last=("floating_pnl", "last"),
-
-            # volume đồng thời lớn nhất
-            buy_volume_max=("buy_volume", "max"),
-            sell_volume_max=("sell_volume", "max"),
-        )
-        .reset_index()
-    )
-
+CONTRACT_SIZE = 100
 
 def daily_pnl(trades):
 
     df = trades.copy()
 
-    df = df[
-        df["type"].isin(
-            ["buy", "sell"]
-        )
-    ]
+    df = df[df["type"].isin(["buy", "sell"])]
 
     if df.empty:
+        return pd.DataFrame(columns=["date", "pnl"])
 
-        return pd.DataFrame(
-            columns=["date", "pnl"]
-        )
-
-    df["date"] = (
-        pd.to_datetime(
-            df["close_time"]
-        ).dt.date
-    )
+    df["date"] = pd.to_datetime(df["close_time"]).dt.date
 
     return (
         df.groupby("date")["profit"]
@@ -70,92 +21,204 @@ def daily_pnl(trades):
         .sort_values("date")
     )
 
+def calc_net_deposit(trades):
+    deposits = trades.loc[trades["type"] == "deposit", "amount"].sum()
+    withdrawals = trades.loc[trades["type"] == "withdrawal", "amount"].sum()
+    return deposits - withdrawals
 
-def pnl_statistics(trades):
+def calc_daily_maxVolume_minFPLN(trades, prices):
 
-    daily = daily_pnl(trades)
+    trade_df = trades.copy()
 
-    if daily.empty:
+    trade_df = trade_df[
+        trade_df["type"].isin(["buy", "sell"])
+    ]
 
-        return {
-            "best_day": None,
-            "best_pnl": 0.0,
-            "worst_day": None,
-            "worst_pnl": 0.0,
+    trade_list = (
+        trade_df
+        .sort_values("open_time")
+        .to_dict("records")
+    )
+
+    prices = prices.copy()
+
+    prices["time"] = pd.to_datetime(
+        prices["Date"].astype(str)
+        + " "
+        + prices["Time"].astype(str)
+    )
+
+    prices = prices.sort_values("time")
+
+    price_list = prices.to_dict("records")
+
+    result = defaultdict(
+        lambda: {
+            "max_buy_volume_realtime": 0.0,
+            "max_sell_volume_realtime": 0.0,
+            "min_floating_realtime": None
         }
+    )
 
-    best_row = daily.loc[
-        daily["pnl"].idxmax()
-    ]
+    if len(price_list) == 0:
+        return pd.DataFrame()
 
-    worst_row = daily.loc[
-        daily["pnl"].idxmin()
-    ]
+    price_start = price_list[0]["time"]
 
-    return {
+    alive = []
 
-        "best_day":
-            best_row["date"],
+    for tr in trade_list:
 
-        "best_pnl":
-            float(best_row["pnl"]),
+        if (
+            tr["open_time"] <= price_start
+            and tr["close_time"] > price_start
+        ):
+            alive.append(tr)
 
-        "worst_day":
-            worst_row["date"],
+    trade_ptr = 0
 
-        "worst_pnl":
-            float(worst_row["pnl"]),
-    }
+    while (
+        trade_ptr < len(trade_list)
+        and trade_list[trade_ptr]["open_time"] <= price_start
+    ):
+        trade_ptr += 1
+
+    for row in price_list:
+
+        now = row["time"]
+        day = now.date()
+
+        price = float(row["Close"])
+
+        while (
+            trade_ptr < len(trade_list)
+            and trade_list[trade_ptr]["open_time"] <= now
+        ):
+
+            tr = trade_list[trade_ptr]
+
+            if tr["close_time"] > now:
+                alive.append(tr)
+
+            trade_ptr += 1
+
+        alive = [
+            tr
+            for tr in alive
+            if tr["close_time"] > now
+        ]
+
+        buy_volume = 0.0
+        sell_volume = 0.0
+        floating = 0.0
+
+        for tr in alive:
+
+            if tr["type"] == "buy":
+
+                buy_volume += tr["size"]
+
+                floating += (
+                    price
+                    - tr["open_price"]
+                ) * tr["size"] * CONTRACT_SIZE
+
+            else:
+
+                sell_volume += tr["size"]
+
+                floating += (
+                    tr["open_price"]
+                    - price
+                ) * tr["size"] * CONTRACT_SIZE
+
+        result[day]["max_buy_volume_realtime"] = max(
+            result[day]["max_buy_volume_realtime"],
+            buy_volume
+        )
+
+        result[day]["max_sell_volume_realtime"] = max(
+            result[day]["max_sell_volume_realtime"],
+            sell_volume
+        )
+
+        current = result[day]["min_floating_realtime"]
+
+        if current is None:
+            result[day]["min_floating_realtime"] = floating
+        else:
+            result[day]["min_floating_realtime"] = min(
+                current,
+                floating
+            )
+
+    rows = []
+
+    for day in sorted(result.keys()):
+
+        row = {"date": day}
+
+        row.update(result[day])
+
+        rows.append(row)
+
+    return pd.DataFrame(rows)
 
 
-def floating_statistics(curve):
+def daily_summary(curve, trades, prices):
 
     df = curve.copy()
 
-    if "floating_pnl" not in df.columns:
+    df["time"] = pd.to_datetime(df["time"])
 
-        df["floating_pnl"] = (
-            df["equity"] - df["balance"]
+    df["date"] = df["time"].dt.date
+
+    curve_daily = (
+        df.groupby("date")
+        .agg(
+            balance_end=("balance", "last"),
+            equity_end=("equity", "last"),
+
+            equity_min=("equity", "min"),
+            equity_max=("equity", "max"),
+
+            min_floating_curve=("floating_pnl", "min"),
+            max_floating_curve=("floating_pnl", "max"),
+
+            max_buy_volume_curve=("buy_volume", "max"),
+            max_sell_volume_curve=("sell_volume", "max"),
         )
+        .reset_index()
+    )
 
-    worst_row = df.loc[
-        df["floating_pnl"].idxmin()
-    ]
+    pnl_daily = daily_pnl(trades)
 
-    best_row = df.loc[
-        df["floating_pnl"].idxmax()
-    ]
+    pnl_daily = pnl_daily.rename(
+        columns={
+            "pnl": "daily_pnl"
+        }
+    )
 
-    return {
+    realtime_daily = calc_daily_maxVolume_minFPLN(
+        trades,
+        prices
+    )
 
-        "worst_time":
-            worst_row["time"],
+    result = curve_daily.merge(
+        pnl_daily,
+        on="date",
+        how="left"
+    )
 
-        "worst_floating":
-            float(
-                worst_row["floating_pnl"]
-            ),
+    result = result.merge(
+        realtime_daily,
+        on="date",
+        how="left"
+    )
 
-        "best_time":
-            best_row["time"],
+    result["daily_pnl"] = (
+        result["daily_pnl"]
+        .fillna(0)
+    )
 
-        "best_floating":
-            float(
-                best_row["floating_pnl"]
-            ),
-    }
-
-
-def calc_net_deposit(trades):
-
-    deposits = trades.loc[
-        trades["type"] == "deposit",
-        "amount"
-    ].sum()
-
-    withdrawals = trades.loc[
-        trades["type"] == "withdrawal",
-        "amount"
-    ].sum()
-
-    return deposits - withdrawals
+    return result
