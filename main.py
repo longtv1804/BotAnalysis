@@ -2,7 +2,7 @@ import pandas as pd
 
 from parser import parse_mt_report
 from equity import build_equity_curve
-from statistics import daily_equity_summary, daily_pnl, calc_net_deposit
+from statistics import daily_summary, daily_pnl, calc_net_deposit
 from excel_report import export_excel_report
 
 
@@ -49,7 +49,7 @@ def main():
     print("MIN BALANCE:", curve["balance"].min())
     print("MIN EQUITY :", curve["equity"].min())
 
-    daily_equity = daily_equity_summary(curve)
+    daily_statictis = daily_summary(curve)
     pnl = daily_pnl(trades)
 
     summary = {
@@ -63,9 +63,8 @@ def main():
         trades=trades,
         curve=curve,
         daily_pnl=pnl,
-        daily_dd=daily_equity,
         summary=summary,
-        daily_equity=daily_equity
+        daily_equity=daily_statictis
     )
 
 

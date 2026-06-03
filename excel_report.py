@@ -2,19 +2,9 @@ import pandas as pd
 from pathlib import Path
 
 
-def export_excel_report(
-    trades,
-    curve,
-    daily_pnl,
-    daily_dd,
-    summary,
-    daily_equity=None
-):
-
+def export_excel_report(trades, curve, daily_pnl, summary, daily_equity=None):
     Path("output").mkdir(exist_ok=True)
-
     with pd.ExcelWriter("output/report.xlsx", engine="xlsxwriter") as writer:
-
         pd.DataFrame([summary]).to_excel(
             writer,
             sheet_name="Summary",
@@ -33,12 +23,6 @@ def export_excel_report(
             index=False
         )
 
-        daily_dd.to_excel(
-            writer,
-            sheet_name="Daily_DD",
-            index=False
-        )
-
         curve.to_excel(
             writer,
             sheet_name="Equity_Curve",
@@ -49,16 +33,13 @@ def export_excel_report(
         worksheet = writer.sheets["Equity_Curve"]
 
         chart = workbook.add_chart({"type": "line"})
-
         max_row = len(curve)
-
         chart.add_series({
             "name": "Equity",
             "categories": ["Equity_Curve", 1, 0, max_row, 0],
             "values": ["Equity_Curve", 1, 2, max_row, 2],
             "line": {"color": "blue"}
         })
-
         chart.add_series({
             "name": "Balance",
             "categories": ["Equity_Curve", 1, 0, max_row, 0],
@@ -71,6 +52,6 @@ def export_excel_report(
         if daily_equity is not None:
             daily_equity.to_excel(
                 writer,
-                sheet_name="Daily_Equity",
+                sheet_name="Daily_Statictis",
                 index=False
             )

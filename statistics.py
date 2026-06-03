@@ -1,7 +1,7 @@
 import pandas as pd
 
 
-def daily_equity_summary(curve):
+def daily_summary(curve):
 
     df = curve.copy()
 
