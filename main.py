@@ -6,11 +6,12 @@ from statistics import daily_summary, calc_daily_maxVolume_minFPLN, calc_net_dep
 from excel_report import export_excel_report
 
 
-START_BALANCE = 10000
+START_BALANCE = 0
 
 
 def main():
-    REPORT_FILE = "reports/FPG-8799939.htm"
+    #REPORT_FILE = "reports/FPG-8799939.htm"
+    REPORT_FILE = "reports/MT5-VT-26579075.html"
     PRICE_FILE = "market_data/MT4-XAUUSD-P1-M5.csv"
 
     print ("Read .html ..........")
